@@ -1,0 +1,258 @@
+!=====================================================================
+!
+!               Full Waveform Adjoint Tomography -v1.1
+!               ---------------------------------------
+!
+!     Main historical authors: Kai Wang
+!                              Macquarie Uni, Australia
+!                            & University of Toronto, Canada
+!                           (c) Martch 2020
+!
+!=====================================================================
+!
+subroutine run_forward_data(model,evtset,simu_type)
+
+  use fullwave_adjoint_tomo_par
+  use fwat_input
+  use my_mpi
+  use specfem_par
+  use specfem_interface
+
+
+  character(len=MAX_STRING_LEN)                   :: model 
+  character(len=MAX_STRING_LEN)                   :: evtset 
+  character(len=MAX_STRING_LEN)                   :: simu_type
+  character(len=MAX_STRING_LEN)                                 :: evtset_file 
+  character(len=MAX_STRING_LEN)                                 :: evtnm 
+  character(len=MAX_STRING_LEN)                                 :: fwd_dir 
+  integer                                                       :: ier
+  integer                                                       :: ievt,nevt
+  real(kind=CUSTOM_REAL), dimension(:), allocatable :: rmass_copy
+  real(kind=CUSTOM_REAL), dimension(:), allocatable :: rmassx_copy,rmassy_copy,rmassz_copy
+  real(kind=CUSTOM_REAL), dimension(:), allocatable :: rmass_acoustic_copy
+
+  
+  !**************** Build directories for the storage ****************************
+  call world_rank(myrank)  
+  call read_fwat_par_file(myrank)
+  if (myrank == 0) then
+     open(unit=OUT_FWAT_LOG,file='output_fwat0_log_'//trim(model)//'.'//trim(evtset)//'.txt')
+     write(OUT_FWAT_LOG,*) 'This is run_forward_data !!!'
+     write(OUT_FWAT_LOG,*) 'model,evtset,simu_type: ',trim(model),'.', trim(evtset),' ',trim(simu_type)
+     evtset_file='src_rec/sources_'//trim(evtset)//'.dat'
+     write(OUT_FWAT_LOG,*) 'evtset_file: ',trim(evtset_file)
+     write(OUT_FWAT_LOG,*) 'SAVE_OUTPUT_EACH_EVENT: ',SAVE_OUTPUT_EACH_EVENT
+     call system('mkdir -p solver')
+     call system('mkdir -p fwat_data')
+     call system('mkdir -p solver/'//trim(model)//'.'//trim(evtset))
+
+     open(unit=400,file=trim(evtset_file),status='old',iostat=ier)
+     if (ier /=0) then
+        print *,'Error could not open source subset file: ',trim(evtset_file) 
+        call exit_mpi(myrank,'Error opening source subset file')
+     endif
+     ievt=0
+     do 
+        read(400,*,iostat=ier) evtnm 
+        if (ier /=0) exit
+        fwd_dir='fwat_data/'//trim(evtnm)
+        call system('mkdir -p '//trim(fwd_dir))
+        fwd_dir='solver/'//trim(model)//'.'//trim(evtset)//'/'//trim(evtnm)
+        call system('mkdir -p '//trim(fwd_dir))
+        call system('mkdir -p '//trim(fwd_dir)//'/EKERNEL')
+        call system('mkdir -p '//trim(fwd_dir)//'/OUTPUT_FILES')
+        ievt=ievt+1
+     enddo
+     close(400)
+     nevt=ievt
+     allocate(station_file(nevt))
+     allocate(src_solution_file(nevt))
+     allocate(evtid_names(nevt))
+     allocate(out_fwd_path(nevt))
+     allocate(in_dat_path(nevt))
+
+     open(unit=400,file=trim(evtset_file),status='old',iostat=ier)
+     do ievt=1,nevt
+        read(400,*,iostat=ier) evtnm
+        if (ier /=0) exit
+        if (simu_type=='noise') then 
+           src_solution_file(ievt)='src_rec/FORCESOLUTION_'//trim(evtnm)
+        elseif (simu_type=='leq') then
+           src_solution_file(ievt)='src_rec/CMTSOLUTION_'//trim(evtnm)
+        endif
+        evtid_names(ievt)=trim(evtnm)
+        station_file(ievt)='src_rec/STATIONS_'//trim(evtnm)
+        out_fwd_path(ievt)='solver/'//trim(model)//'.'//trim(evtset)//'/'//trim(evtnm)
+        in_dat_path(ievt)='fwat_data/'//trim(evtnm)
+     enddo
+     write(OUT_FWAT_LOG,*) 'nevt= ',nevt
+     write(OUT_FWAT_LOG,*) '*******************************************************'
+     close(400)
+  endif
+  call bcast_all_singlei(nevt)
+  if (myrank /= 0) then
+     allocate(station_file(nevt))
+     allocate(src_solution_file(nevt))
+     allocate(evtid_names(nevt))
+     allocate(out_fwd_path(nevt))
+     allocate(in_dat_path(nevt))
+  endif
+  call bcast_all_ch_array(src_solution_file,nevt,MAX_STRING_LEN)
+  call bcast_all_ch_array(evtid_names,nevt,MAX_STRING_LEN)
+  call bcast_all_ch_array(station_file,nevt,MAX_STRING_LEN)
+  call bcast_all_ch_array(out_fwd_path,nevt,MAX_STRING_LEN)
+  call bcast_all_ch_array(in_dat_path,nevt,MAX_STRING_LEN)
+  call bcast_all_ch_array(model,1,MAX_STRING_LEN)
+  !*************** end of building directories ******************************
+     
+  ! ************** From specfem3D() **************
+
+  ! force Flush-To-Zero if available to avoid very slow Gradual Underflow trapping
+  call force_ftz()
+
+  ! reads in parameters
+  call initialize_simulation_fwat()
+
+  ! reset this value for SIMULATION_TYPE=3
+  COMPUTE_AND_STORE_STRAIN = .true.
+  NSPEC_STRAIN_ONLY = NSPEC_AB
+  NGLOB_ADJOINT = NGLOB_AB
+  NSPEC_ADJOINT = NSPEC_AB
+
+  !!enforce to allocate arrays in read_mesh_databases_adjoint()
+  SIMULATION_TYPE=3
+  APPROXIMATE_HESS_KL=.true. !! test preconditionner
+  PRINT_SOURCE_TIME_FUNCTION=.true.
+  SAVE_FORWARD=.false.
+  SAVE_MESH_FILES=.false.
+
+  ! reads in external mesh
+  if (ADIOS_FOR_MESH) then
+    call read_mesh_databases_adios()
+  else
+    call read_mesh_databases()
+  endif
+
+  ! copy mass matrixs for prepare_timerun()
+  if (ACOUSTIC_SIMULATION) then
+     allocate(rmass_acoustic_copy(NGLOB_AB),stat=ier)
+     if (ier /= 0) stop 'Error allocating array rmass_acoustic_copy'
+     rmass_acoustic_copy=rmass_acoustic
+  endif
+  
+  if (ELASTIC_SIMULATION) then
+     allocate(rmass_copy(NGLOB_AB),stat=ier)
+     allocate(rmassx_copy(NGLOB_AB),stat=ier)
+     allocate(rmassy_copy(NGLOB_AB),stat=ier)
+     allocate(rmassz_copy(NGLOB_AB),stat=ier)
+     if (ier /= 0) stop 'Error allocating array rmass_copy'
+     rmass_copy=rmass
+     rmassx_copy=rmassx
+     rmassy_copy=rmassy
+     rmassz_copy=rmassz
+  endif
+
+  ! reads in moho mesh
+  if (ADIOS_FOR_MESH) then
+    call read_mesh_databases_moho_adios()
+  else
+    call read_mesh_databases_moho()
+  endif
+
+  ! reads adjoint parameters
+  call read_mesh_databases_adjoint()
+
+  ! sets up reference element GLL points/weights/derivatives
+  call setup_GLL_points()
+
+  ! detects surfaces
+  call detect_mesh_surfaces()
+
+  !=================================================================================
+  do ievt=1,nevt 
+     if (simu_type=='tele') then
+        source_fname='DATA/CMTSOLUTION'
+     else
+        source_fname=src_solution_file(ievt)
+     endif
+     station_fname=station_file(ievt)
+     !!! WK: OUTPUT_FILES is where mesh files, seismograms are saved
+     OUTPUT_FILES=trim(out_fwd_path(ievt))//'/OUTPUT_FILES'
+     !!! WK: prname is where forward fields, kernels are saved
+     LOCAL_PATH=trim(out_fwd_path(ievt))//'/EKERNEL'
+     call create_name_database(prname,myrank,LOCAL_PATH) 
+     if (myrank==0) then 
+        write(OUT_FWAT_LOG,*) 'ievt, source_fname, station_fname= ',ievt,trim(source_fname),trim(station_fname)
+        write(OUT_FWAT_LOG,*) 'out_fwd_path= ',ievt,trim(out_fwd_path(ievt))
+     endif
+
+     !******************* forward **********************************
+     if(myrank==0) write(OUT_FWAT_LOG,*) 'This is forward simulations ...'
+     SIMULATION_TYPE=1
+     SAVE_FORWARD=.false.
+     COMPUTE_AND_STORE_STRAIN = .false.
+     if(simu_type=='tele') then
+       COUPLE_WITH_INJECTION_TECHNIQUE=.true.
+       INJECTION_TECHNIQUE_TYPE=3
+       FKMODEL_FILE='src_rec/FKmodel_'//trim(evtid_names(ievt))
+     else
+       COUPLE_WITH_INJECTION_TECHNIQUE=.false.
+     endif
+
+     call InitSpecfem()
+     ! prepares sources and receivers
+     call setup_sources_receivers_fwat(source_fname,station_fname)
+
+     ! sets up and precomputes simulation arrays
+
+     if (ACOUSTIC_SIMULATION) then
+        if( .not. allocated(rmass_acoustic)) allocate(rmass_acoustic(NGLOB_AB))
+        rmass_acoustic=rmass_acoustic_copy
+     endif
+     if (ELASTIC_SIMULATION) then
+        if( .not. allocated(rmass)) allocate(rmass(NGLOB_AB))
+        if( .not. allocated(rmassx)) allocate(rmassx(NGLOB_AB))
+        if( .not. allocated(rmassy)) allocate(rmassy(NGLOB_AB))
+        if( .not. allocated(rmassz)) allocate(rmassz(NGLOB_AB))
+        rmass=rmass_copy
+        rmassx=rmassx_copy
+        rmassy=rmassy_copy
+        rmassz=rmassz_copy
+     endif
+     call prepare_timerun() !!! WK: all wavefields and kernels are reset
+
+     ! steps through time linesearch
+     call iterate_time()
+
+     ! saves last time frame and finishes kernel calculations
+     call FinalizeSpecfem() 
+     !************************** measure ******************************
+     call run_semd2sac(ievt,simu_type)
+     
+     open(unit=1234, iostat=ier, file=trim(prname)//'absorb_field.bin', status='old')
+     if (ier == 0) close(1234, status='delete') 
+
+
+     if(myrank==0)  write(OUT_FWAT_LOG,*) '----------------------------------------'
+  enddo ! end loop of ievt
+  !=================================================================================
+ 
+  !********************* end  ******************************************************
+  if(myrank==0)  write(OUT_FWAT_LOG,*) '*******************************************************'
+  if(myrank==0)  write(OUT_FWAT_LOG,*) 'Finished simulations here!!!'
+  if(myrank==0) close(OUT_FWAT_LOG)
+  call synchronize_all()
+  if(allocated(rmass_copy)) deallocate(rmass_copy)
+  if(allocated(rmassx_copy)) deallocate(rmassx_copy)
+  if(allocated(rmassy_copy)) deallocate(rmassy_copy)
+  if(allocated(rmassz_copy)) deallocate(rmassz_copy)
+  if(allocated(rmass_acoustic_copy)) deallocate(rmass_acoustic_copy)
+  if(allocated(SCOMPS)) deallocate(SCOMPS)
+  if(allocated(RCOMPS)) deallocate(RCOMPS)
+  if(allocated(SHORT_P)) deallocate(SHORT_P)
+  if(allocated(LONG_P)) deallocate(LONG_P)
+  if(allocated(GROUPVEL_MIN)) deallocate(GROUPVEL_MIN)!BinHe added
+  if(allocated(GROUPVEL_MAX)) deallocate(GROUPVEL_MAX)!BinHe added
+  if(allocated(STEP_LENS)) deallocate(STEP_LENS)
+
+end subroutine run_forward_data
