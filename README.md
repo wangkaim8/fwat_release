@@ -15,8 +15,8 @@ Packages:
 
 Presentations (In Chinese):
 
-- 全波形伴随成像方法与程序介绍.pdf
-- FWAT-v1.1安装与使用.pptx
+- 全波形伴随成像方法与程序介绍.pdf (Video: https://www.koushare.com/live/details/36458?vid=143565)
+- FWAT-v1.1安装与使用.pptx (Video: https://www.koushare.com/live/details/36458?vid=143566)
 
 
 ## About FWAT package
