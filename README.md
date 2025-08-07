@@ -1,9 +1,25 @@
 # Full Waveform Adjoint Tomography (FWAT)-v1.1
 
-**Copyright (c) 2020  Kai Wang (wangkaim8@gmail.com)**
+**Copyright (c) 2024  Kai Wang (wangk@ustc.edu.cn)**
 
-***Please do NOT distribute the codes without permission***
+**This version is released at the 2024 Seismo Training Summer School in Shenyang, China (https://seismo.training.ustc.edu.cn/2024/0804/c34699a650949/page.htm)**
 
+You are welcome to download the following packages for the training website:
+
+Packages:
+
+- `specfem3d-42abac6d18.tar.gz`: 开源谱元法程序
+- `fwat-v1.1_manual.pdf`: FWAT说明书
+- `fwat_release.zip`: FWAT软件安装包
+- `fwat_toy_exam1_noise_for_testing_codes.tar.gz`: FWAT合成测试例子
+
+Presentations (In Chinese):
+
+- 全波形伴随成像方法与程序介绍.pdf
+- FWAT-v1.1安装与使用.pptx
+
+
+## About FWAT package
 
 The FWAT package can perform both noise FWI, teleseismic FWI and their joint inversion.
 The inversion workflow is illustrated in an older version named [SPECFEM3D_ANAT](
@@ -40,7 +56,7 @@ For **teleseismic full-waveform inversion**, please also consider citing:
     Multiple Plane‐Wave Incidence: Methods and Practical Applications. 
     Bulletin of the Seismological Society of America, 112(1), 118-132.
 
-Please contact Kai Wang (wangkaim8@gmail.com) if you have any suggestions.
+Please contact Kai Wang (wangk@ustc.edu.cn) if you have any suggestions.
 
 ## Installation
 
@@ -50,7 +66,7 @@ git clone --recursive https://github.com/geodynamics/specfem3d.git
 cd specfem3d
 git checkout -b fwat 42abac6d18
 cd src
-git clone --recursive https://gitlab.com/wangkaim8/fwat.git fullwave_adjoint_tomo
+git clone --recursive https://github.com/fwat4specfem/fwat_release fullwave_adjoint_tomo
 cd ..
 ```
 
