@@ -4,7 +4,7 @@
 
 **This version is released at the 2024 Seismo Training Summer School in Shenyang, China (https://seismo.training.ustc.edu.cn/2024/0804/c34699a650949/page.htm)**
 
-You are welcome to download the following packages for the training website:
+You are welcome to download the following packages from the training website:
 
 Packages:
 
@@ -22,13 +22,12 @@ Presentations (In Chinese):
 ## About FWAT package
 
 The FWAT package can perform both noise FWI, teleseismic FWI and their joint inversion.
-The inversion workflow is illustrated in an older version named [SPECFEM3D_ANAT](
-https://github.com/wangkaim8/SPECFEM3D_ANAT).
+The manual of FWAT can be found from [fwat-v1.1_manual.pdf](fwat_docs/fwat-v1.1_manual.pdf).
 
 ## Acknowledgements
 For the use of the FWAT package, please cite as: 
 
-We use the FWAT package (Wang et al., 2018; Wang et al., 2021) to conduct XXX inversions in this study. The FWAT package is available from https://gitlab.com/specfem_fwat/fwat.
+We use the FWAT package (Wang et al., 2018; Wang et al., 2021) to conduct XXX inversions in this study. The FWAT package is available from https://github.com/fwat4specfem.
 
 1. Wang, K., Yang, Y., Basini, P., Tong P., Tape, C. and Liu Q., 2018.
     Refined crustal and uppermost structure of southern California by ambient noise 
